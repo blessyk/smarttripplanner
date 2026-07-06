@@ -1,0 +1,8 @@
+.env
+node_modules/
+data/
+
+# Uploads and system files
+uploads/
+.DS_Store
+*.log
