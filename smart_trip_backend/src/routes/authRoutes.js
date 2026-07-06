@@ -32,6 +32,18 @@ router.get('/portal-logo', async (req, res, next) => {
   }
 });
 
+router.get('/ai-provider', async (req, res, next) => {
+  try {
+    const providerSetting = await Setting.findOne({ key: 'AI_PROVIDER' });
+    res.status(200).json({
+      success: true,
+      data: providerSetting ? providerSetting.value : 'gemini'
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Protected routes
 router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfileValidator, validate, updateProfile);

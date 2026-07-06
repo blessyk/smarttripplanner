@@ -26,6 +26,22 @@ const DestinationSearch = () => {
 
   const autocompleteRef = useRef(null);
   const debounceRef = useRef(null);
+  const [aiProvider, setAiProvider] = useState("gemini");
+
+  // Fetch active AI provider on load
+  useEffect(() => {
+    const fetchAiProvider = async () => {
+      try {
+        const response = await api.get("/auth/ai-provider");
+        if (response.data?.success && response.data.data) {
+          setAiProvider(response.data.data);
+        }
+      } catch (err) {
+        console.error("Failed to load active AI provider settings:", err);
+      }
+    };
+    fetchAiProvider();
+  }, []);
 
   // Close suggestions on click outside
   useEffect(() => {
@@ -325,7 +341,9 @@ const DestinationSearch = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3 bg-white p-4 rounded-xl border border-slate-200">
                 <FaSpinner className="animate-spin text-blue-600" />
-                <span className="text-xs text-slate-500 font-semibold">Consulting Gemini AI travel models for local data...</span>
+                <span className="text-xs text-slate-500 font-semibold">
+                  Consulting {aiProvider === "groq" ? "Groq (Llama 3)" : "Gemini"} AI travel models for local data...
+                </span>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 {[1, 2, 3, 4].map((i) => (
@@ -453,11 +471,11 @@ const DestinationSearch = () => {
                         <>
                           <div className="flex items-center gap-1.5">
                             <FaDollarSign className="text-slate-400" />
-                            <span><strong>Price Guide:</strong> {item.priceRange}</span>
+                            <span><strong>Price Guide:</strong> {item.priceRange || "N/A"}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <FaMapMarkerAlt className="text-slate-400" />
-                            <span><strong>Location:</strong> {item.locationSummary}</span>
+                            <span><strong>Location:</strong> {item.locationSummary || "N/A"}</span>
                           </div>
                         </>
                       )}

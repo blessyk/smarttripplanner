@@ -1729,5 +1729,7 @@ module.exports = {
   analyzeRisk,
   exploreDestination,
   analyzeSentimentText,
-  predictDestinationFromImage
+  predictDestinationFromImage,
+  getCoordinates,
+  getScheduleItemCoordinates
 };

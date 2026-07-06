@@ -45,6 +45,8 @@ const getTrip = async (req, res, next) => {
   }
 };
 
+const { getCoordinates, getScheduleItemCoordinates } = require('./aiController');
+
 /**
  * @desc    Create a new trip
  * @route   POST /api/trips
@@ -52,14 +54,10 @@ const getTrip = async (req, res, next) => {
  */
 const createTrip = async (req, res, next) => {
   try {
-    const { destination, startDate, endDate, budget, travelers, tripType, interests, accommodationPreference, foodPreference, transportationPreference, specialRequirements, itinerary } = req.body;
-
-    const trip = await Trip.create({
-      userId: req.user._id,
+    const {
       destination,
       startDate,
       endDate,
-      numberOfDays: itinerary.length,
       budget,
       travelers,
       tripType,
@@ -68,7 +66,91 @@ const createTrip = async (req, res, next) => {
       foodPreference,
       transportationPreference,
       specialRequirements,
-      itinerary
+      itinerary,
+      attractions,
+      recommendedHotels,
+      recommendedRestaurants,
+      budgetBreakdown,
+      weatherInfo,
+      riskAnalysis
+    } = req.body;
+
+    let destLat = req.body.latitude;
+    let destLon = req.body.longitude;
+
+    if (destination && (!destLat || !destLon)) {
+      try {
+        const coords = await getCoordinates(destination);
+        destLat = coords.lat;
+        destLon = coords.lon;
+      } catch (err) {
+        console.warn('Geocoding destination failed in createTrip:', err);
+      }
+    }
+
+    // Geocode itinerary spots if coordinates are missing
+    if (itinerary && itinerary.length > 0 && destLat && destLon) {
+      const geocodePromises = [];
+      itinerary.forEach((dayPlan) => {
+        if (dayPlan.schedule && dayPlan.schedule.length > 0) {
+          dayPlan.schedule.forEach((item, idx) => {
+            if (!item.latitude || !item.longitude) {
+              const searchName = item.location || item.activity;
+              if (searchName) {
+                const promise = getScheduleItemCoordinates(searchName, destination, destLat, destLon, idx)
+                  .then((itemCoords) => {
+                    item.latitude = itemCoords.lat;
+                    item.longitude = itemCoords.lon;
+                  })
+                  .catch(() => {});
+                geocodePromises.push(promise);
+              }
+            }
+          });
+        }
+      });
+      if (geocodePromises.length > 0) {
+        await Promise.all(geocodePromises);
+      }
+    }
+
+    const trip = await Trip.create({
+      userId: req.user._id,
+      destination,
+      startDate,
+      endDate,
+      numberOfDays: itinerary ? itinerary.length : 1,
+      budget,
+      travelers,
+      tripType,
+      interests: interests || [],
+      accommodationPreference: accommodationPreference || 'Standard',
+      foodPreference: foodPreference || 'Local Cuisine',
+      transportationPreference: transportationPreference || 'any',
+      specialRequirements: specialRequirements || '',
+      itinerary,
+      attractions: attractions || [],
+      recommendedHotels: recommendedHotels || [],
+      recommendedRestaurants: recommendedRestaurants || [],
+      budgetBreakdown: budgetBreakdown || {
+        accommodationBudget: 0,
+        foodBudget: 0,
+        transportationBudget: 0,
+        activityBudget: 0,
+        emergencyBudget: 0
+      },
+      weatherInfo: weatherInfo || {
+        forecast: 'No weather information available',
+        warnings: 'None',
+        recommendations: ''
+      },
+      riskAnalysis: riskAnalysis || {
+        riskLevel: 'Low',
+        reason: '',
+        recommendation: ''
+      },
+      latitude: destLat,
+      longitude: destLon
     });
 
     res.status(201).json({
