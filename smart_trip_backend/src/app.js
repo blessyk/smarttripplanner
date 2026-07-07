@@ -32,10 +32,10 @@ app.use(cors({
 }));
 
 // Parse JSON request bodies
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // Parse URL-encoded request bodies
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Prevent NoSQL injection and XSS scripting attacks
 app.use(noSqlSanitizer);

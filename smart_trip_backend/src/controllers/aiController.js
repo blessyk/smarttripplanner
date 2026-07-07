@@ -763,7 +763,7 @@ async function callGroq(systemPrompt, userPrompt) {
 }
 
 /**
- * Unified AI call router that checks the active AI Provider setting.
+ * Unified AI call router that checks the active AI Provider setting, with automatic failover fallback.
  */
 async function callAI(systemPrompt, userPrompt, responseSchema = null) {
   let activeProvider = 'gemini'; // default
@@ -777,9 +777,37 @@ async function callAI(systemPrompt, userPrompt, responseSchema = null) {
   }
 
   if (activeProvider === 'groq') {
-    return await callGroq(systemPrompt, userPrompt);
+    try {
+      return await callGroq(systemPrompt, userPrompt);
+    } catch (groqError) {
+      const isQuotaError = groqError.message.includes('429') || groqError.message.toLowerCase().includes('quota') || groqError.message.toLowerCase().includes('limit');
+      if (isQuotaError && process.env.GEMINI_API_KEY) {
+        console.warn('[AI Failover] Groq quota/rate limit reached. Falling back to Gemini.');
+        try {
+          return await callGemini(systemPrompt, userPrompt, responseSchema);
+        } catch (geminiError) {
+          console.error('[AI Failover] Fallback to Gemini also failed:', geminiError.message);
+          throw groqError;
+        }
+      }
+      throw groqError;
+    }
   } else {
-    return await callGemini(systemPrompt, userPrompt, responseSchema);
+    try {
+      return await callGemini(systemPrompt, userPrompt, responseSchema);
+    } catch (geminiError) {
+      const isQuotaError = geminiError.message.includes('429') || geminiError.message.toLowerCase().includes('quota') || geminiError.message.toLowerCase().includes('limit');
+      if (isQuotaError && process.env.GROQ_API_KEY) {
+        console.warn('[AI Failover] Gemini quota/rate limit reached. Falling back to Groq.');
+        try {
+          return await callGroq(systemPrompt, userPrompt);
+        } catch (groqError) {
+          console.error('[AI Failover] Fallback to Groq also failed:', groqError.message);
+          throw geminiError;
+        }
+      }
+      throw geminiError;
+    }
   }
 }
 
@@ -1573,11 +1601,6 @@ Return strictly a JSON object matching the required schema.`;
   }
 }
 
-/**
- * @desc    Predict destination/landmark from uploaded image
- * @route   POST /api/ai/predict-destination
- * @access  Private
- */
 const predictDestinationFromImage = async (req, res, next) => {
   try {
     const { image, mimeType } = req.body;
@@ -1585,9 +1608,14 @@ const predictDestinationFromImage = async (req, res, next) => {
       return next(new ApiError(400, 'Base64 image data and mimeType are required'));
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return next(new ApiError(400, 'GEMINI_API_KEY is not defined in env'));
+    let activeProvider = 'gemini'; // default
+    try {
+      const providerSetting = await Setting.findOne({ key: 'AI_PROVIDER' });
+      if (providerSetting && providerSetting.value) {
+        activeProvider = providerSetting.value.toLowerCase().trim();
+      }
+    } catch (err) {
+      console.error('Error fetching AI_PROVIDER setting for vision, defaulting to Gemini:', err);
     }
 
     // Set up structured schema to ensure we get a reliable JSON response
@@ -1607,106 +1635,211 @@ Return strictly a JSON object with:
 2. "location": the city, state/region, and country where this destination is located.
 3. "description": a paragraph (3-4 sentences) describing its historical, cultural, or scenic importance and key things to do.`;
 
-    const modelName = 'gemini-flash-latest'; // Always use a vision-capable multimodal model for images
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    const modelChain = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-    let lastError = null;
-    let success = false;
     let parsedData = null;
+    let success = false;
+    let lastError = null;
 
-    for (let mIndex = 0; mIndex < modelChain.length; mIndex++) {
-      const modelName = modelChain[mIndex];
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    const tryGeminiVision = async () => {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: image
+      const modelChain = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+      for (let mIndex = 0; mIndex < modelChain.length; mIndex++) {
+        const modelName = modelChain[mIndex];
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+        const requestBody = {
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: image
+                  }
+                },
+                {
+                  text: systemPrompt
                 }
-              },
-              {
-                text: systemPrompt
-              }
-            ]
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: predictionSchema,
+            temperature: 0.2
           }
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: predictionSchema,
-          temperature: 0.2
-        }
-      };
+        };
 
-      const maxRetries = 3;
-      let delay = 1000;
-      console.log(`[Gemini Request] Routing image prediction to model: ${modelName}`);
+        const maxRetries = 3;
+        let delay = 1000;
+        console.log(`[Gemini Vision Request] Routing image prediction to model: ${modelName}`);
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-          });
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(requestBody)
+            });
 
-          if (!response.ok) {
-            const errText = await response.text();
-            let errorMessage = `Gemini API error: ${response.status} - ${errText}`;
-            try {
-              const parsedError = JSON.parse(errText);
-              if (parsedError.error && parsedError.error.message) {
-                errorMessage = `Gemini API error (${response.status}): ${parsedError.error.message}`;
+            if (!response.ok) {
+              const errText = await response.text();
+              let errorMessage = `Gemini API error: ${response.status} - ${errText}`;
+              try {
+                const parsedError = JSON.parse(errText);
+                if (parsedError.error && parsedError.error.message) {
+                  errorMessage = `Gemini API error (${response.status}): ${parsedError.error.message}`;
+                }
+              } catch (parseErr) {}
+
+              const isTransient = response.status === 503 || response.status === 429;
+              if (isTransient && attempt < maxRetries) {
+                console.warn(`[Vision Transient Error ${response.status}] Attempt ${attempt} failed for model ${modelName}. Retrying in ${delay}ms...`);
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                delay *= 2;
+                continue;
               }
-            } catch (parseErr) {}
 
-            const isTransient = response.status === 503 || response.status === 429;
-            if (isTransient && attempt < maxRetries) {
-              console.warn(`[Vision Transient Error ${response.status}] Attempt ${attempt} failed for model ${modelName}. Retrying in ${delay}ms...`);
-              await new Promise((resolve) => setTimeout(resolve, delay));
-              delay *= 2;
-              continue;
+              throw new Error(errorMessage);
             }
 
-            throw new Error(errorMessage);
-          }
+            const jsonResult = await response.json();
+            if (!jsonResult.candidates || !jsonResult.candidates[0]?.content?.parts?.[0]?.text) {
+              throw new Error('Gemini API returned no analysis output');
+            }
 
-          const jsonResult = await response.json();
-          if (!jsonResult.candidates || !jsonResult.candidates[0]?.content?.parts?.[0]?.text) {
-            throw new Error('Gemini API returned no analysis output');
-          }
+            const resultText = jsonResult.candidates[0].content.parts[0].text;
+            return JSON.parse(resultText);
 
-          const resultText = jsonResult.candidates[0].content.parts[0].text;
-          parsedData = JSON.parse(resultText);
-          success = true;
-          break;
-
-        } catch (err) {
-          lastError = err;
-          console.warn(`[Vision Attempt Failed] Model ${modelName} attempt ${attempt} failed: ${err.message}`);
-          if (attempt === maxRetries) {
-            break;
+          } catch (err) {
+            lastError = err;
+            console.warn(`[Vision Attempt Failed] Model ${modelName} attempt ${attempt} failed: ${err.message}`);
+            if (attempt === maxRetries) {
+              break;
+            }
           }
         }
       }
+      throw lastError || new Error('All Gemini Vision models failed');
+    };
 
-      if (success) {
-        break;
+    const tryGroqVision = async () => {
+      const apiKey = process.env.GROQ_API_KEY;
+      if (!apiKey) throw new Error('GROQ_API_KEY is not configured');
+
+      const modelChain = ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
+      for (let mIndex = 0; mIndex < modelChain.length; mIndex++) {
+        const modelName = modelChain[mIndex];
+        const url = 'https://api.groq.com/openai/v1/chat/completions';
+
+        const requestBody = {
+          model: modelName,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `${systemPrompt}\n\nPlease analyze the image and return strictly the JSON object.`
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mimeType};base64,${image}`
+                  }
+                }
+              ]
+            }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.2
+        };
+
+        const maxRetries = 3;
+        let delay = 1000;
+        console.log(`[Groq Vision Request] Routing image prediction to model: ${modelName}`);
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+              },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+              const errText = await response.text();
+              let errorMessage = `Groq Vision API error: ${response.status} - ${errText}`;
+              try {
+                const parsedError = JSON.parse(errText);
+                if (parsedError.error && parsedError.error.message) {
+                  errorMessage = `Groq Vision API error (${response.status}): ${parsedError.error.message}`;
+                }
+              } catch (parseErr) {}
+
+              const isTransient = response.status === 503 || response.status === 429;
+              if (isTransient && attempt < maxRetries) {
+                console.warn(`[Groq Vision Transient Error ${response.status}] Attempt ${attempt} failed. Retrying...`);
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                delay *= 2;
+                continue;
+              }
+              throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            const contentText = data.choices?.[0]?.message?.content;
+            if (!contentText) {
+              throw new Error('Groq Vision returned empty completions');
+            }
+            return JSON.parse(contentText);
+
+          } catch (err) {
+            lastError = err;
+            console.warn(`[Groq Vision Attempt Failed] Model ${modelName} attempt ${attempt} failed: ${err.message}`);
+            if (attempt === maxRetries) {
+              break;
+            }
+          }
+        }
       }
+      throw lastError || new Error('All Groq Vision models failed');
+    };
 
-      if (mIndex < modelChain.length - 1) {
-        console.warn(`[Vision Model Failure] ${modelName} failed. Falling back to next model: ${modelChain[mIndex + 1]}. Error: ${lastError.message}`);
+    if (activeProvider === 'groq') {
+      try {
+        parsedData = await tryGroqVision();
+        success = true;
+      } catch (err) {
+        console.warn('[Vision Failover] Groq Vision failed, attempting Gemini fallback:', err.message);
+        try {
+          parsedData = await tryGeminiVision();
+          success = true;
+        } catch (geminiErr) {
+          console.error('[Vision Failover] Gemini fallback also failed:', geminiErr.message);
+          return next(new ApiError(500, err.message));
+        }
       }
-    }
-
-    if (!success) {
-      throw lastError || new Error('Max retries and fallback options exceeded without image analysis response');
+    } else {
+      try {
+        parsedData = await tryGeminiVision();
+        success = true;
+      } catch (err) {
+        console.warn('[Vision Failover] Gemini Vision failed, attempting Groq fallback:', err.message);
+        try {
+          parsedData = await tryGroqVision();
+          success = true;
+        } catch (groqErr) {
+          console.error('[Vision Failover] Groq fallback also failed:', groqErr.message);
+          return next(new ApiError(500, err.message));
+        }
+      }
     }
 
     res.status(200).json({

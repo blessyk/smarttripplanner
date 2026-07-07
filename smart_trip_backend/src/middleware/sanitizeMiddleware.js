@@ -23,12 +23,27 @@ const sanitizeNoSql = (obj) => {
   }
 };
 
+const isLikelyBase64 = (str, key) => {
+  if (key === 'image' || key === 'photo' || key === 'coverImage' || key === 'logo' || key === 'mimeType') {
+    return true;
+  }
+  if (str.startsWith('data:image/') || str.startsWith('image/')) {
+    return true;
+  }
+  if (str.length > 100 && !/\s/.test(str) && /^[a-zA-Z0-9+/=]+$/.test(str)) {
+    return true;
+  }
+  return false;
+};
+
 // In-place XSS sanitizer to escape HTML string properties
 const sanitizeXss = (obj) => {
   if (obj && typeof obj === 'object') {
     for (const key in obj) {
       if (typeof obj[key] === 'string') {
-        obj[key] = escapeHtml(obj[key]);
+        if (!isLikelyBase64(obj[key], key)) {
+          obj[key] = escapeHtml(obj[key]);
+        }
       } else if (typeof obj[key] === 'object') {
         sanitizeXss(obj[key]);
       }
