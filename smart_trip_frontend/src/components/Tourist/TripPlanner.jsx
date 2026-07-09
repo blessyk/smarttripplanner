@@ -33,7 +33,6 @@ const placeTypesList = [
 ];
 
 const TripPlanner = () => {
-  const [dbDestinations, setDbDestinations] = useState([]);
   const [selectedInterests, setSelectedInterests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
@@ -60,20 +59,6 @@ const TripPlanner = () => {
     }
     return () => clearInterval(interval);
   }, [loading]);
-
-  useEffect(() => {
-    const fetchDestinations = async () => {
-      try {
-        const response = await api.get("/destinations");
-        if (response.data?.success) {
-          setDbDestinations(response.data.data.destinations || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch destinations for autocomplete:", err);
-      }
-    };
-    fetchDestinations();
-  }, []);
 
   const {
     register,
@@ -143,13 +128,6 @@ const TripPlanner = () => {
         </div>
       )}
 
-      {/* Autocomplete Datalist */}
-      <datalist id="db-destinations-list">
-        {dbDestinations.map((dest) => (
-          <option key={dest._id} value={dest.name} />
-        ))}
-      </datalist>
-
       <div className="max-w-4xl mx-auto">
         <header className="mb-6">
           <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
@@ -171,7 +149,6 @@ const TripPlanner = () => {
               <input
                 {...register("destination")}
                 placeholder="Enter city, region or country..."
-                list="db-destinations-list"
                 autoComplete="off"
                 className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors.destination ? "border-red-500" : "border-slate-200"

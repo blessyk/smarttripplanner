@@ -1730,7 +1730,7 @@ Return strictly a JSON object with:
       const apiKey = process.env.GROQ_API_KEY;
       if (!apiKey) throw new Error('GROQ_API_KEY is not configured');
 
-      const modelChain = ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
+      const modelChain = ['llama-3.2-11b-vision-instruct', 'llama-3.2-90b-vision-instruct'];
       for (let mIndex = 0; mIndex < modelChain.length; mIndex++) {
         const modelName = modelChain[mIndex];
         const url = 'https://api.groq.com/openai/v1/chat/completions';

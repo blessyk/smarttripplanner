@@ -31,7 +31,6 @@ const StatCard = ({ title, value, sub, icon, gradient, onClick }) => (
 const Dashboard = () => {
   const navigate = useNavigate();
   const { isLoggedIn, user } = useSelector((state) => state.auth);
-  const [allDestinations, setAllDestinations] = useState([]);
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,22 +38,13 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const [tripsRes, destRes] = await Promise.all([
-          api.get("/trips").catch((err) => {
-            console.error("Failed to load user trips:", err);
-            return null;
-          }),
-          api.get("/destinations").catch((err) => {
-            console.error("Failed to load destinations:", err);
-            return null;
-          })
-        ]);
+        const tripsRes = await api.get("/trips").catch((err) => {
+          console.error("Failed to load user trips:", err);
+          return null;
+        });
 
         if (tripsRes?.data?.success && Array.isArray(tripsRes.data.data?.trips)) {
           setTrips(tripsRes.data.data.trips);
-        }
-        if (destRes?.data?.success && Array.isArray(destRes.data.data?.destinations)) {
-          setAllDestinations(destRes.data.data.destinations);
         }
       } catch (err) {
         console.error("Error loading dashboard metrics:", err);
@@ -64,49 +54,6 @@ const Dashboard = () => {
     };
     fetchDashboardData();
   }, []);
-
-  // Compute recommendations dynamically based on user's past trip interests
-  const destinations = React.useMemo(() => {
-    if (!allDestinations || allDestinations.length === 0) return [];
-
-    const userInterests = trips.flatMap(trip => trip.interests || []);
-    const interestCounts = {};
-    userInterests.forEach(interest => {
-      const norm = interest.trim();
-      interestCounts[norm] = (interestCounts[norm] || 0) + 1;
-    });
-
-    const scored = allDestinations.map(dest => {
-      let score = 0;
-      
-      // Direct category match weighting (e.g. matching 'Beach' to Beach category)
-      if (interestCounts[dest.category]) {
-        score += interestCounts[dest.category] * 5;
-      }
-      
-      // Text description keyword matching
-      Object.keys(interestCounts).forEach(interest => {
-        if (dest.description && dest.description.toLowerCase().includes(interest.toLowerCase())) {
-          score += interestCounts[interest] * 1;
-        }
-      });
-      
-      return { ...dest, score };
-    });
-
-    // Sort by recommendation score, falling back to database order
-    return scored.sort((a, b) => b.score - a.score).slice(0, 3);
-  }, [allDestinations, trips]);
-
-  const getTagStyle = (category) => {
-    switch (category) {
-      case "Beach": return "text-teal-700 bg-teal-50 border-teal-200";
-      case "Adventure": return "text-red-700 bg-red-50 border-red-200";
-      case "Cultural": return "text-amber-700 bg-amber-50 border-amber-200";
-      case "Wildlife": return "text-green-700 bg-green-50 border-green-200";
-      default: return "text-indigo-700 bg-indigo-50 border-indigo-200";
-    }
-  };
 
   if (!isLoggedIn) return <Navigate to="/" />;
 
@@ -336,115 +283,56 @@ const Dashboard = () => {
           )}
 
           {/* Bottom Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {/* Destinations — spans 2 cols */}
-            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <p className="text-slate-800 font-bold text-sm">Recommended Destinations</p>
-                  <p className="text-slate-400 text-xs">Picked for you</p>
-                </div>
-                <Link to="/Tourist/DestinationSearch" className="bg-blue-50 border border-blue-200 text-blue-600 text-xs rounded-lg px-3 py-1 hover:bg-blue-100 transition-colors">
-                  View all
-                </Link>
-              </div>
-              
-              {destinations.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {destinations.map((d) => (
-                    <div key={d._id} className="border border-slate-200 rounded-xl overflow-hidden hover:-translate-y-1 transition-transform duration-200 flex flex-col bg-white">
-                      <div className="w-full h-28 bg-slate-200 overflow-hidden relative flex-shrink-0">
-                        <img
-                          src={d.images && d.images[0] ? d.images[0] : "https://images.unsplash.com/photo-1507525428034-b723cf961d3e"}
-                          alt={d.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e";
-                          }}
-                        />
-                        <div className="absolute top-2 right-2 bg-black bg-opacity-65 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                          {d.duration || "5 Days"}
-                        </div>
-                      </div>
-                      <div className="p-3 flex flex-col flex-grow">
-                        <p className="font-bold text-slate-800 text-sm truncate">{d.name}</p>
-                        <p className="text-slate-500 text-xs mb-2 truncate">{d.country}</p>
-                        <p className="text-[#0A3D62] font-bold text-xs mb-3">₹{(d.price || 15000).toLocaleString("en-IN")}</p>
-                        <div className="flex items-center justify-between mt-auto">
-                          <span className={`text-[10px] border rounded-md px-2 py-0.5 font-medium ${getTagStyle(d.category)}`}>
-                            {d.category || "Sightseeing"}
-                          </span>
-                          <button 
-                            onClick={() => navigate("/Tourist/TripPlanner", { state: { destination: d.name } })}
-                            className="bg-blue-50 border border-blue-200 text-blue-600 text-[11px] rounded-lg px-2.5 py-1 hover:bg-blue-100 transition-colors cursor-pointer"
-                          >
-                            Explore
-                          </button>
-                        </div>
-                      </div>
+            {/* Activity */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <p className="text-slate-800 font-bold text-sm mb-1">Recent Activity</p>
+              <p className="text-slate-400 text-xs mb-3">Latest actions</p>
+              <div className="space-y-3">
+                {displayActivities.map((a, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className={`w-7 h-7 rounded-full ${a.iconBg} flex items-center justify-center flex-shrink-0`}>
+                      {a.icon}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-400 text-xs">
-                  No destinations resolved. Explore destinations using search!
-                </div>
-              )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-850 text-xs truncate font-medium">{a.label}</p>
+                      <p className="text-slate-400 text-[10px]">{a.time}</p>
+                    </div>
+                    <div className={`w-1.5 h-1.5 rounded-full ${a.dotBg} flex-shrink-0`} />
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Right column */}
-            <div className="flex flex-col gap-4">
-
-              {/* Activity */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                <p className="text-slate-800 font-bold text-sm mb-1">Recent Activity</p>
-                <p className="text-slate-400 text-xs mb-3">Latest actions</p>
-                <div className="space-y-3">
-                  {displayActivities.map((a, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-full ${a.iconBg} flex items-center justify-center flex-shrink-0`}>
-                        {a.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-slate-850 text-xs truncate font-medium">{a.label}</p>
-                        <p className="text-slate-400 text-[10px]">{a.time}</p>
-                      </div>
-                      <div className={`w-1.5 h-1.5 rounded-full ${a.dotBg} flex-shrink-0`} />
+            {/* Budget */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <p className="text-slate-800 font-bold text-sm mb-1">
+                {budgetTrip ? `${budgetTrip.destination} Budget` : "Sample Trip Budget"}
+              </p>
+              <p className="text-slate-400 text-xs mb-3">₹{totalTripBudget.toLocaleString("en-IN")} total</p>
+              <div className="space-y-2.5">
+                {dynamicBudgetItems.map((b) => (
+                  <div key={b.label}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-500">{b.label}</span>
+                      <span className="text-slate-800 font-medium">{b.amount}</span>
                     </div>
-                  ))}
-                </div>
+                    <div className="bg-slate-100 rounded-full h-1.5">
+                      <div className={`${b.color} h-1.5 rounded-full`} style={{ width: b.pct }} />
+                    </div>
+                  </div>
+                ))}
+                
+                {budgetTrip && (
+                  <div className="flex justify-between pt-2 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500 font-medium">Itinerary Cost Summary</span>
+                    <span className="text-blue-600 font-semibold">₹{totalTripBudget.toLocaleString("en-IN")} / ₹{totalTripBudget.toLocaleString("en-IN")}</span>
+                  </div>
+                )}
               </div>
-
-              {/* Budget */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                <p className="text-slate-800 font-bold text-sm mb-1">
-                  {budgetTrip ? `${budgetTrip.destination} Budget` : "Sample Trip Budget"}
-                </p>
-                <p className="text-slate-400 text-xs mb-3">₹{totalTripBudget.toLocaleString("en-IN")} total</p>
-                <div className="space-y-2.5">
-                  {dynamicBudgetItems.map((b) => (
-                    <div key={b.label}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-500">{b.label}</span>
-                        <span className="text-slate-800 font-medium">{b.amount}</span>
-                      </div>
-                      <div className="bg-slate-100 rounded-full h-1.5">
-                        <div className={`${b.color} h-1.5 rounded-full`} style={{ width: b.pct }} />
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {budgetTrip && (
-                    <div className="flex justify-between pt-2 border-t border-slate-100 text-xs">
-                      <span className="text-slate-500 font-medium">Itinerary Cost Summary</span>
-                      <span className="text-blue-600 font-semibold">₹{totalTripBudget.toLocaleString("en-IN")} / ₹{totalTripBudget.toLocaleString("en-IN")}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
             </div>
+
           </div>
         </>
       )}
