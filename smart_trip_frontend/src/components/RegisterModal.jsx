@@ -173,9 +173,9 @@ export default function RegisterModal({ onSwitch, closeModal }) {
 
               <button
                 type="submit"
-                disabled={!isValid || loading}
+                disabled={loading}
                 className={`w-full py-2.5 rounded-xl font-bold transition-all text-xs cursor-pointer shadow-md bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white hover:opacity-95 shadow-blue-100/50 ${
-                  (!isValid || loading) ? "opacity-50 cursor-not-allowed" : ""
+                  loading ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               >
                 {loading ? "Registering..." : "Register"}

@@ -12,10 +12,15 @@ import { toast } from "react-toastify";
 
 const schema = yup.object().shape({
   destination: yup.string().required("Destination is required"),
-  startDate: yup.date().required("Start date is required"),
+  startDate: yup
+    .date()
+    .typeError("Invalid start date")
+    .min(new Date(new Date().setHours(0,0,0,0)), "Start date cannot be in the past")
+    .required("Start date is required"),
   endDate: yup
     .date()
-    .min(yup.ref("startDate"), "End date must be after start date")
+    .typeError("Invalid end date")
+    .min(yup.ref("startDate"), "End date must be on or after start date")
     .required("End date is required"),
   budget: yup.number().typeError("Budget must be a number").positive("Budget must be positive").required("Budget is required"),
   travelers: yup.number().typeError("Travelers must be a number").positive().integer().default(1).required("Number of travelers is required"),
@@ -63,6 +68,7 @@ const TripPlanner = () => {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm({
     resolver: yupResolver(schema),
@@ -75,6 +81,9 @@ const TripPlanner = () => {
       transportationPreference: "Public Transport"
     }
   });
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const watchedStartDate = watch("startDate");
 
   const handleInterestToggle = (interest) => {
     setSelectedInterests((prev) =>
@@ -185,6 +194,7 @@ const TripPlanner = () => {
               </label>
               <input
                 type="date"
+                min={todayStr}
                 {...register("startDate")}
                 className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors.startDate ? "border-red-500" : "border-slate-200"
@@ -202,6 +212,7 @@ const TripPlanner = () => {
               </label>
               <input
                 type="date"
+                min={watchedStartDate || todayStr}
                 {...register("endDate")}
                 className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors.endDate ? "border-red-500" : "border-slate-200"
