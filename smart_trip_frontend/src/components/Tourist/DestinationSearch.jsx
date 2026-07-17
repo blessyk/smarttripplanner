@@ -137,10 +137,10 @@ const DestinationSearch = () => {
 
   // Preset location cards
   const presets = [
-    { name: "Tokyo, Japan", emoji: "🗼" },
-    { name: "Rome, Italy", emoji: "🏛️" },
-    { name: "Paris, France", emoji: "🗼" },
-    { name: "Reykjavik, Iceland", emoji: "🌋" }
+    { name: "New Delhi, India", emoji: "🕌" },
+    { name: "Mumbai, India", emoji: "🌊" },
+    { name: "Jaipur, India", emoji: "🏰" },
+    { name: "Goa, India", emoji: "🏖️" }
   ];
 
   // Save itinerary to MongoDB database logic
@@ -363,7 +363,7 @@ const DestinationSearch = () => {
             /* Welcome / Preset suggestions panel */
             <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
               <h3 className="text-base font-bold text-slate-800 mb-2">⭐ Discover Popular Cities</h3>
-              <p className="text-slate-500 text-xs mb-6">Select a global hotspot to explore or type your destination above:</p>
+              <p className="text-slate-500 text-xs mb-6">Select a popular hotspot to explore or type your destination above:</p>
               
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {presets.map((p, idx) => (
